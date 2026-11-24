@@ -177,6 +177,73 @@ O KNN como sonda de informação preservada foi **removido**: o escopo ficou só
 
 - Quais configurações do sintético testar (p, ruído, separação) fica em aberto para quem trabalhar na P3 e na P5.
 
+## Issue #3: Clustering e estimativa de K (P2)
+
+Tudo fica em `clustering.py`. As classes seguem a interface `ClusterAlgo` (`fit(Z, K)` e `predict(Z)`) e ganham um método `bic(Z)`; o dicionário `ALGOS` liga o nome (`"kmeans"`, `"gmm"`) à classe.
+
+### Algoritmos e parâmetros
+
+| Peça | Decisão | Motivo |
+|---|---|---|
+| `KMeansAlgo` | `n_init=5` por padrão, `random_state=seed` | K-means é instável (seção 4.5 do contexto). O 5 é o padrão recomendado, não um mínimo obrigatório. |
+| `GMMAlgo` | `covariance_type="diag"`, uma execução do EM, `random_state=seed` | covariância diagonal, como combinado na interface |
+| `estimate_K` | ajusta cada K de `K_grid` e escolhe o de **menor BIC** ou **maior silhueta**; padrão `criterion="bic"` | os dois critérios pedidos na issue; ver a pendência abaixo |
+| Silhueta | com mais de `sample_size` linhas (padrão 5000), é calculada numa subamostra sorteada com a semente | custa O(n²): com n = 20 000 eram ~2 s por K; com a subamostra, 0,2 s, e o mesmo K |
+| Clustering original | `fit_original_clustering` ajusta no espaço completo; `save_clustering` grava os rótulos por split, com algoritmo, K e semente, num `.npz` (em `results/`, fora do git); `load_clustering` lê de volta | é a referência do `agreement_full` no sweep |
+
+### BIC do K-means
+
+O K-means não tem verossimilhança. Usamos a do X-means (Pelleg e Moore, 2000): K gaussianas esféricas com **uma variância compartilhada** σ², pesos nₖ/n e centros nos centroides.
+
+- σ² = inércia / ((n − K)·d)
+- log L = Σₖ nₖ log(nₖ/n) − (n·d/2)·log(2πσ²) − (n − K)·d/2
+- m = (K − 1) + K·d + 1 parâmetros livres (pesos, centros e σ²)
+- BIC = −2 log L + m·log n
+
+O BIC do GMM é o do scikit-learn (`GaussianMixture.bic`), com variâncias diagonais por componente.
+
+### Validação no sintético com K conhecido, por d
+
+Sintético padrão (n = 1000, p = 50, K = 10, sinal em K − 1 = 9 dimensões), só centralizado, PCA com d componentes, `K_grid = range(2, 21)`, sementes 0 a 4. Número de sementes, entre 5, em que `estimate_K` devolveu exatamente 10:
+
+| d | K-means, BIC | K-means, silhueta | GMM, BIC | GMM, silhueta |
+|---|---|---|---|---|
+| 1, 2, 3, 5 | 0 | 0 | 0 | 0 |
+| 7 | 4 | 0 | 3 | 0 |
+| 8 | 5 | 2 | 4 | 2 |
+| 9 (= K − 1) | 5 | 5 | 4 | 4 |
+| 10 | 5 | 5 | 3 | 3 |
+| 15 | 5 | 5 | 2 | 2 |
+| 20 | 5 | 5 | 3 | 3 |
+| 30 | 5 | 5 | 5 | 5 |
+| 50 (= p) | 4 | 4 | 1 | 2 |
+
+**O que se lê:**
+- Com d < K − 1 o K é **subestimado** (com d = 5 o K estimado fica entre 6 e 9): faltam dimensões para separar todos os grupos, como prevê Ding e He.
+- A partir de d = K − 1 o K-means acerta quase sempre, com os dois critérios.
+- O GMM erra em vários d mesmo com o sinal completo, em geral por 1 a 4 clusters; com d = p chegou a escolher 3. Ele roda o EM uma vez só, enquanto o K-means faz 5 inicializações (causa provável, não testada).
+
+O teste `test_estimate_k_on_synthetic_by_d` confere a mesma coisa numa versão menor (K = 5, n = 500, p = 30, 3 sementes).
+
+### Em dados reais, o BIC acompanha o teto da grade
+
+Resultado da revisão da PR #14 (K verdadeiro = 10, PCA em vários d, `K_grid = range(2, 21)`, sementes 0 e 1):
+
+| Dados | BIC (K-means e GMM) | Silhueta |
+|---|---|---|
+| Sintético (n = 1000, p = 50) | 10 a partir de d = 9 (= K − 1); com d < 9 subestima | igual ao BIC |
+| `digits` | 15 a 20 (K-means: sempre 20) | K-means: 9 em todo d |
+| `mnist` (n = 3000) | 20 a partir de d = 9 (GMM com d = 200: 4) | instável, de 2 a 20 |
+
+- No `digits` com d = 20, subindo o teto da grade para 30 e 40, o BIC do K-means escolhe 30 e 40; o do GMM para em 28.
+- Não é erro do código, é o comportamento do critério. Explicação provável: os dados reais não são gaussianos esféricos (nem diagonais), e com milhares de pontos o ganho de verossimilhança de partir um grupo supera a penalidade m·log n.
+- **Consequência:** com o padrão `criterion="bic"`, o K estimado em dados reais depende de onde a grade termina.
+
+### Pendências
+
+- **O grupo precisa decidir qual critério o sweep usa para estimar K** (`estimate_K_flag=True`): BIC, silhueta ou outro. Em aberto até essa decisão, o padrão continua `"bic"`, como na interface combinada.
+- **GMM no espaço completo:** no MNIST (n = 3000), o GMM diagonal dá ARI 0,15 contra 0,34 do K-means (revisão da PR #14). O `agreement_full` com GMM compara com uma referência fraca, o que deve ser lembrado na análise.
+
 ## Issue #4: Regras para escolher d (P3)
 
 Todas as regras ficam em `rules.py`, recebem o `X_train` já pré-processado e devolvem um `int`. Nenhuma usa rótulos.
