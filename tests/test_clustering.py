@@ -150,11 +150,11 @@ def test_save_and_load_original_clustering(tmp_path):
 
 
 def test_ding_he_pca_subspace_property():
-    """Test Ding & He (2004) Theorem 3.1:
-    The continuous cluster indicator vectors for K clusters lie in the first
-    K - 1 principal components subspace.
-    Here for K=4 clusters, projecting onto d=K-1=3 components preserves clustering
-    quality and enables exact K recovery.
+    """One case consistent with Ding and He (2004), Theorem 3.1, which says
+    the continuous cluster indicators lie in the span of the first K - 1
+    principal components. It does not test the theorem: it only checks that,
+    for one synthetic dataset with K = 4, projecting onto d = K - 1 = 3
+    components keeps K recoverable and the clustering close to the labels.
     """
     K = 4
     X, y = load_dataset(
