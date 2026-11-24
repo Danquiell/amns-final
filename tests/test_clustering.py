@@ -80,6 +80,29 @@ def test_estimate_k_bic():
     assert best_k_km == 3
 
 
+# Synthetic data with K = 5 (signal in K - 1 = 4 dimensions), n = 500, p = 30.
+# Expected: K is underestimated with d < K - 1 and recovered with d >= K - 1.
+# GMM (one EM run) misses K at d = p for some seeds, so it is checked only up
+# to d = 10. Full validation (K = 10) in docs/DECISOES.md, issue #3.
+@pytest.mark.parametrize("criterion", ["bic", "silhouette"])
+@pytest.mark.parametrize(
+    "algo_name, d_grid",
+    [("kmeans", (1, 2, 4, 10, 30)), ("gmm", (1, 2, 4, 10))],
+)
+def test_estimate_k_on_synthetic_by_d(algo_name, d_grid, criterion):
+    K = 5
+    for seed in (0, 1, 2):
+        X, _ = load_dataset("synthetic", n=500, p=30, n_clusters=K, seed=seed)
+        X = X - X.mean(axis=0)
+        for d in d_grid:
+            Z = PCA(n_components=d, random_state=seed).fit_transform(X)
+            est = estimate_K(Z, algo_name, range(2, 9), criterion=criterion, seed=seed)
+            if d < K - 1:
+                assert est < K, f"seed={seed}, d={d}: K_est={est}"
+            else:
+                assert est == K, f"seed={seed}, d={d}: K_est={est}"
+
+
 def test_estimate_k_invalid_criterion_or_k():
     X = np.random.default_rng(0).standard_normal((50, 5))
     with pytest.raises(ValueError, match="criterion='silhouette' requires K >= 2"):
