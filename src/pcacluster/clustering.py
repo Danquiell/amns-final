@@ -37,6 +37,33 @@ class KMeansAlgo:
             raise RuntimeError("Model must be fitted before predict.")
         return self.model_.predict(Z)
 
+    def bic(self, Z: np.ndarray) -> float:
+        """BIC assuming spherical Gaussian clusters with one shared variance
+        (Pelleg and Moore, 2000, X-means). Lower is better.
+
+        BIC = -2 log L + m ln(n), with m = (K - 1) + K d + 1 free parameters:
+        mixing weights, centers and the shared variance sigma^2, estimated as
+        sigma^2 = inertia / ((n - K) d).
+        """
+        if self.model_ is None:
+            raise RuntimeError("Model must be fitted before bic.")
+        n, d = Z.shape
+        k = self.model_.n_clusters
+        if n <= k:
+            return float("inf")
+
+        labels = self.model_.predict(Z)
+        inertia = -self.model_.score(Z)
+        sigma2 = max(inertia / ((n - k) * d), 1e-10)
+
+        cluster_sizes = np.bincount(labels, minlength=k)
+        weights = cluster_sizes / n
+        ent = float(np.sum(cluster_sizes * np.log(np.maximum(weights, 1e-12))))
+        ll = -0.5 * n * d * np.log(2.0 * np.pi * sigma2) - 0.5 * (n - k) * d + ent
+
+        m = (k - 1) + k * d + 1
+        return float(-2.0 * ll + m * np.log(n))
+
 
 class GMMAlgo:
     """Gaussian mixture with diagonal covariance."""
@@ -59,32 +86,17 @@ class GMMAlgo:
             raise RuntimeError("Model must be fitted before predict.")
         return self.model_.predict(Z)
 
+    def bic(self, Z: np.ndarray) -> float:
+        """BIC of the fitted mixture (scikit-learn). Lower is better."""
+        if self.model_ is None:
+            raise RuntimeError("Model must be fitted before bic.")
+        return float(self.model_.bic(Z))
 
-def _kmeans_bic(kmeans: KMeans, Z: np.ndarray) -> float:
-    """Estimate BIC for a fitted KMeans model assuming spherical Gaussian clusters
-    (Pelleg & Moore, 2000, X-means).
 
-    BIC = -2 * log_likelihood + m * ln(n)
-    where m is the number of free parameters:
-    m = (K - 1) + K * d + 1
-    (cluster probabilities, cluster centers, and shared variance sigma^2).
-    """
-    n, d = Z.shape
-    k = kmeans.n_clusters
-    if n <= k:
-        return float("inf")
-
-    inertia = kmeans.inertia_
-    sigma2 = max(inertia / ((n - k) * d), 1e-10)
-
-    cluster_sizes = np.bincount(kmeans.labels_, minlength=k)
-    weights = cluster_sizes / n
-
-    ent = float(np.sum(cluster_sizes * np.log(np.maximum(weights, 1e-12))))
-    ll = -0.5 * n * d * np.log(2.0 * np.pi * sigma2) - 0.5 * (n - k) * d + ent
-
-    m = (k - 1) + k * d + 1
-    return float(-2.0 * ll + m * np.log(n))
+ALGOS: dict[str, type[KMeansAlgo] | type[GMMAlgo]] = {
+    "kmeans": KMeansAlgo,
+    "gmm": GMMAlgo,
+}
 
 
 def estimate_K(
@@ -97,71 +109,40 @@ def estimate_K(
     """Fit algo_name for each K in K_grid and pick K by criterion.
 
     algo_name: 'kmeans' or 'gmm'.
-    criterion: 'bic' or 'silhouette'.
+    criterion: 'bic' (minimized) or 'silhouette' (maximized, needs K >= 2).
     """
     if not K_grid:
         raise ValueError("K_grid must not be empty.")
-    if algo_name not in ("kmeans", "gmm"):
+    if algo_name not in ALGOS:
         raise ValueError(f"Unknown algo_name: {algo_name!r}")
     if criterion not in ("bic", "silhouette"):
         raise ValueError(f"Unknown criterion: {criterion!r}")
-
-    if criterion == "silhouette":
-        min_k = min(K_grid)
-        if min_k < 2:
-            raise ValueError(
-                f"criterion='silhouette' requires K >= 2 for all K in K_grid, got min K={min_k}."
-            )
+    if criterion == "silhouette" and min(K_grid) < 2:
+        raise ValueError(
+            f"criterion='silhouette' requires K >= 2 for all K in K_grid, got min K={min(K_grid)}."
+        )
 
     scores: dict[int, float] = {}
-
     for k in K_grid:
-        if algo_name == "kmeans":
-            model = KMeansAlgo(n_init=5, seed=seed)
-            model.fit(Z, k)
-            if criterion == "silhouette":
-                labels = model.predict(Z)
-                scores[k] = float(silhouette_score(Z, labels))
-            elif criterion == "bic":
-                assert model.model_ is not None
-                scores[k] = _kmeans_bic(model.model_, Z)
-            else:
-                raise ValueError(f"Unknown criterion: {criterion!r}")
-        elif algo_name == "gmm":
-            model = GMMAlgo(seed=seed)
-            model.fit(Z, k)
-            if criterion == "silhouette":
-                labels = model.predict(Z)
-                if len(np.unique(labels)) < 2:
-                    scores[k] = -1.0
-                else:
-                    scores[k] = float(silhouette_score(Z, labels))
-            elif criterion == "bic":
-                assert model.model_ is not None
-                scores[k] = float(model.model_.bic(Z))
-            else:
-                raise ValueError(f"Unknown criterion: {criterion!r}")
+        model = ALGOS[algo_name](seed=seed).fit(Z, k)
+        if criterion == "bic":
+            # Negated so that the best K is always the maximum.
+            scores[k] = -model.bic(Z)
         else:
-            raise ValueError(f"Unknown algo_name: {algo_name!r}")
+            labels = model.predict(Z)
+            # A model can leave components empty; silhouette needs 2 labels.
+            if len(np.unique(labels)) < 2:
+                scores[k] = -1.0
+            else:
+                scores[k] = float(silhouette_score(Z, labels))
 
-    if criterion == "silhouette":
-        best_k = max(scores, key=lambda k: scores[k])
-    else:
-        best_k = min(scores, key=lambda k: scores[k])
-
-    return int(best_k)
+    return int(max(scores, key=lambda k: scores[k]))
 
 
 def fit_original_clustering(
     X_train: np.ndarray, algo_name: str, K: int, seed: int = 0
 ) -> ClusterAlgo:
     """Fit clustering on the full (original) dimensional space."""
-    if algo_name == "kmeans":
-        model: ClusterAlgo = KMeansAlgo(seed=seed)
-    elif algo_name == "gmm":
-        model = GMMAlgo(seed=seed)
-    else:
+    if algo_name not in ALGOS:
         raise ValueError(f"Unknown algo_name: {algo_name!r}")
-
-    model.fit(X_train, K)
-    return model
+    return ALGOS[algo_name](seed=seed).fit(X_train, K)
