@@ -79,6 +79,16 @@ def test_estimate_k_invalid_criterion_or_k():
         estimate_K(X, "invalid_algo", range(2, 4), criterion="bic")
 
 
+def test_estimate_k_validates_before_fitting(monkeypatch):
+    def fail_fit(self, Z, K):
+        raise AssertionError("fit must not run with invalid arguments")
+
+    monkeypatch.setattr(KMeansAlgo, "fit", fail_fit)
+    X = np.random.default_rng(0).standard_normal((50, 5))
+    with pytest.raises(ValueError, match="Unknown criterion"):
+        estimate_K(X, "kmeans", range(2, 4), criterion="invalid_crit")
+
+
 def test_fit_original_clustering_agreement():
     X, y = load_dataset("synthetic", n=200, p=20, n_clusters=4, separation=8.0, seed=42)
     orig_model = fit_original_clustering(X, "kmeans", K=4, seed=42)

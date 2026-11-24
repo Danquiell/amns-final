@@ -101,6 +101,10 @@ def estimate_K(
     """
     if not K_grid:
         raise ValueError("K_grid must not be empty.")
+    if algo_name not in ("kmeans", "gmm"):
+        raise ValueError(f"Unknown algo_name: {algo_name!r}")
+    if criterion not in ("bic", "silhouette"):
+        raise ValueError(f"Unknown criterion: {criterion!r}")
 
     if criterion == "silhouette":
         min_k = min(K_grid)
