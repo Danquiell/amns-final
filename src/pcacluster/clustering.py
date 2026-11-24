@@ -9,7 +9,7 @@ from sklearn.metrics import silhouette_score
 from sklearn.mixture import GaussianMixture
 
 
-class ClusterModel(Protocol):
+class ClusterAlgo(Protocol):
     name: str
 
     def fit(self, Z: np.ndarray, K: int) -> Self: ...
@@ -17,11 +17,7 @@ class ClusterModel(Protocol):
     def predict(self, Z: np.ndarray) -> np.ndarray: ...
 
 
-# Backward-compatible alias for the protocol
-ClusterAlgo = ClusterModel
-
-
-class KMeansCluster:
+class KMeansAlgo:
     """K-means with several initializations (n_init >= 5)."""
 
     name = "kmeans"
@@ -44,7 +40,7 @@ class KMeansCluster:
         return self.model_.predict(Z)
 
 
-class GMMCluster:
+class GMMAlgo:
     """Gaussian mixture with diagonal covariance."""
 
     name = "gmm"
@@ -64,11 +60,6 @@ class GMMCluster:
         if self.model_ is None:
             raise RuntimeError("Model must be fitted before predict.")
         return self.model_.predict(Z)
-
-
-# Aliases if referenced elsewhere
-KMeansAlgo = KMeansCluster
-GMMAlgo = GMMCluster
 
 
 def _kmeans_bic(kmeans: KMeans, Z: np.ndarray) -> float:
@@ -124,7 +115,7 @@ def estimate_K(
 
     for k in K_grid:
         if algo_name == "kmeans":
-            model = KMeansCluster(n_init=5, seed=seed)
+            model = KMeansAlgo(n_init=5, seed=seed)
             model.fit(Z, k)
             if criterion == "silhouette":
                 labels = model.predict(Z)
@@ -135,7 +126,7 @@ def estimate_K(
             else:
                 raise ValueError(f"Unknown criterion: {criterion!r}")
         elif algo_name == "gmm":
-            model = GMMCluster(seed=seed)
+            model = GMMAlgo(seed=seed)
             model.fit(Z, k)
             if criterion == "silhouette":
                 labels = model.predict(Z)
@@ -161,12 +152,12 @@ def estimate_K(
 
 def fit_original_clustering(
     X_train: np.ndarray, algo_name: str, K: int, seed: int = 0
-) -> ClusterModel:
+) -> ClusterAlgo:
     """Fit clustering on the full (original) dimensional space."""
     if algo_name == "kmeans":
-        model: ClusterModel = KMeansCluster(seed=seed)
+        model: ClusterAlgo = KMeansAlgo(seed=seed)
     elif algo_name == "gmm":
-        model = GMMCluster(seed=seed)
+        model = GMMAlgo(seed=seed)
     else:
         raise ValueError(f"Unknown algo_name: {algo_name!r}")
 

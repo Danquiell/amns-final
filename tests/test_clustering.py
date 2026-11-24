@@ -4,14 +4,14 @@ import numpy as np
 import pytest
 from sklearn.decomposition import PCA
 
-from pcacluster.clustering import GMMCluster, KMeansCluster, estimate_K, fit_original_clustering
+from pcacluster.clustering import GMMAlgo, KMeansAlgo, estimate_K, fit_original_clustering
 from pcacluster.data import load_dataset
 from pcacluster.metrics import ari
 
 
 def test_kmeans_cluster_fit_predict():
     X, _ = load_dataset("synthetic", n=150, p=10, n_clusters=3, seed=42)
-    model = KMeansCluster(n_init=5, seed=42)
+    model = KMeansAlgo(n_init=5, seed=42)
     fitted = model.fit(X, K=3)
     assert fitted is model
 
@@ -23,19 +23,19 @@ def test_kmeans_cluster_fit_predict():
 
 def test_kmeans_cluster_min_n_init():
     with pytest.raises(ValueError, match="n_init must be at least 5"):
-        KMeansCluster(n_init=3)
+        KMeansAlgo(n_init=3)
 
 
 def test_kmeans_cluster_reproducibility():
     X, _ = load_dataset("synthetic", n=100, p=10, n_clusters=3, seed=42)
-    model1 = KMeansCluster(n_init=5, seed=123).fit(X, K=3)
-    model2 = KMeansCluster(n_init=5, seed=123).fit(X, K=3)
+    model1 = KMeansAlgo(n_init=5, seed=123).fit(X, K=3)
+    model2 = KMeansAlgo(n_init=5, seed=123).fit(X, K=3)
     np.testing.assert_array_equal(model1.predict(X), model2.predict(X))
 
 
 def test_gmm_cluster_fit_predict():
     X, _ = load_dataset("synthetic", n=150, p=10, n_clusters=3, seed=42)
-    model = GMMCluster(seed=42)
+    model = GMMAlgo(seed=42)
     fitted = model.fit(X, K=3)
     assert fitted is model
 
@@ -47,8 +47,8 @@ def test_gmm_cluster_fit_predict():
 
 def test_gmm_cluster_reproducibility():
     X, _ = load_dataset("synthetic", n=100, p=10, n_clusters=3, seed=42)
-    model1 = GMMCluster(seed=123).fit(X, K=3)
-    model2 = GMMCluster(seed=123).fit(X, K=3)
+    model1 = GMMAlgo(seed=123).fit(X, K=3)
+    model2 = GMMAlgo(seed=123).fit(X, K=3)
     np.testing.assert_array_equal(model1.predict(X), model2.predict(X))
 
 
@@ -112,6 +112,6 @@ def test_ding_he_pca_subspace_property():
     assert est_k == K
 
     # 2. Clustering quality in reduced space matches or is close to original
-    km = KMeansCluster(n_init=5, seed=42).fit(Z, K=K)
+    km = KMeansAlgo(n_init=5, seed=42).fit(Z, K=K)
     reduced_ari = ari(y, km.predict(Z))
     assert reduced_ari > 0.9
