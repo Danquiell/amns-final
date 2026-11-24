@@ -57,6 +57,12 @@ def test_estimate_k_silhouette():
     assert best_k_gmm == 3
 
 
+def test_estimate_k_silhouette_subsample():
+    X, _ = load_dataset("synthetic", n=600, p=10, n_clusters=3, separation=10.0, seed=42)
+    best_k = estimate_K(X, "kmeans", range(2, 6), criterion="silhouette", sample_size=200)
+    assert best_k == 3
+
+
 def test_estimate_k_bic():
     # Well-separated 3 clusters in 10 dimensions
     X, y = load_dataset("synthetic", n=300, p=10, n_clusters=3, separation=10.0, seed=42)

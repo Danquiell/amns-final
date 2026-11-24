@@ -105,11 +105,15 @@ def estimate_K(
     K_grid: Sequence[int],
     criterion: str = "bic",
     seed: int = 0,
+    sample_size: int | None = 5000,
 ) -> int:
     """Fit algo_name for each K in K_grid and pick K by criterion.
 
     algo_name: 'kmeans' or 'gmm'.
     criterion: 'bic' (minimized) or 'silhouette' (maximized, needs K >= 2).
+    sample_size: with criterion='silhouette' and more than sample_size rows,
+    the silhouette is computed on a random subsample of that size (drawn
+    with seed), since its cost grows with n^2. None uses all rows.
     """
     if not K_grid:
         raise ValueError("K_grid must not be empty.")
@@ -121,6 +125,9 @@ def estimate_K(
         raise ValueError(
             f"criterion='silhouette' requires K >= 2 for all K in K_grid, got min K={min(K_grid)}."
         )
+
+    if sample_size is not None and len(Z) <= sample_size:
+        sample_size = None
 
     scores: dict[int, float] = {}
     for k in K_grid:
@@ -134,7 +141,11 @@ def estimate_K(
             if len(np.unique(labels)) < 2:
                 scores[k] = -1.0
             else:
-                scores[k] = float(silhouette_score(Z, labels))
+                scores[k] = float(
+                    silhouette_score(
+                        Z, labels, sample_size=sample_size, random_state=seed
+                    )
+                )
 
     return int(max(scores, key=lambda k: scores[k]))
 
