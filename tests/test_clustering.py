@@ -4,7 +4,14 @@ import numpy as np
 import pytest
 from sklearn.decomposition import PCA
 
-from pcacluster.clustering import GMMAlgo, KMeansAlgo, estimate_K, fit_original_clustering
+from pcacluster.clustering import (
+    GMMAlgo,
+    KMeansAlgo,
+    estimate_K,
+    fit_original_clustering,
+    load_clustering,
+    save_clustering,
+)
 from pcacluster.data import load_dataset
 from pcacluster.metrics import ari
 
@@ -100,6 +107,23 @@ def test_fit_original_clustering_agreement():
     orig_model = fit_original_clustering(X, "kmeans", K=4, seed=42)
     pred_orig = orig_model.predict(X)
     assert ari(y, pred_orig) > 0.8
+
+
+def test_save_and_load_original_clustering(tmp_path):
+    X, _ = load_dataset("synthetic", n=200, p=20, n_clusters=4, separation=8.0, seed=0)
+    X_train, X_test = X[:150], X[150:]
+    model = fit_original_clustering(X_train, "gmm", K=4, seed=0)
+    labels = {"train": model.predict(X_train), "test": model.predict(X_test)}
+
+    path = save_clustering(
+        tmp_path / "sub" / "original.npz", labels, algo_name="gmm", K=4, seed=0
+    )
+    loaded = load_clustering(path)
+
+    assert (loaded["algo_name"], loaded["K"], loaded["seed"]) == ("gmm", 4, 0)
+    assert loaded["labels"].keys() == {"train", "test"}
+    for split in labels:
+        np.testing.assert_array_equal(loaded["labels"][split], labels[split])
 
 
 def test_ding_he_pca_subspace_property():

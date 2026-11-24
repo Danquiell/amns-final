@@ -1,6 +1,7 @@
 """Clustering algorithms with a common interface and estimation of K."""
 
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Protocol, Self
 
 import numpy as np
@@ -157,3 +158,47 @@ def fit_original_clustering(
     if algo_name not in ALGOS:
         raise ValueError(f"Unknown algo_name: {algo_name!r}")
     return ALGOS[algo_name](seed=seed).fit(X_train, K)
+
+
+def save_clustering(
+    path: str | Path,
+    labels: dict[str, np.ndarray],
+    *,
+    algo_name: str,
+    K: int,
+    seed: int,
+) -> Path:
+    """Save cluster labels (e.g. {'train': ..., 'test': ...}) and how they
+    were obtained to an .npz file, creating parent directories.
+
+    Used to keep the "original" clustering in the full dimension, which the
+    clustering in the PCA space is compared against (agreement_full).
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez(
+        path,
+        algo_name=algo_name,
+        K=K,
+        seed=seed,
+        **{f"labels_{split}": np.asarray(y) for split, y in labels.items()},
+    )
+    return path
+
+
+def load_clustering(path: str | Path) -> dict:
+    """Load a file written by save_clustering.
+
+    Returns {'algo_name': str, 'K': int, 'seed': int, 'labels': {split: array}}.
+    """
+    with np.load(path) as f:
+        return {
+            "algo_name": str(f["algo_name"]),
+            "K": int(f["K"]),
+            "seed": int(f["seed"]),
+            "labels": {
+                key.removeprefix("labels_"): f[key]
+                for key in f.files
+                if key.startswith("labels_")
+            },
+        }
