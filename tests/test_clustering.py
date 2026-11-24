@@ -21,11 +21,6 @@ def test_kmeans_cluster_fit_predict():
     assert set(np.unique(preds)).issubset({0, 1, 2})
 
 
-def test_kmeans_cluster_min_n_init():
-    with pytest.raises(ValueError, match="n_init must be at least 5"):
-        KMeansAlgo(n_init=3)
-
-
 def test_kmeans_cluster_reproducibility():
     X, _ = load_dataset("synthetic", n=100, p=10, n_clusters=3, seed=42)
     model1 = KMeansAlgo(n_init=5, seed=123).fit(X, K=3)

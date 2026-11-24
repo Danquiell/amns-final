@@ -18,13 +18,11 @@ class ClusterAlgo(Protocol):
 
 
 class KMeansAlgo:
-    """K-means with several initializations (n_init >= 5)."""
+    """K-means with several initializations (n_init >= 5 recommended)."""
 
     name = "kmeans"
 
     def __init__(self, n_init: int = 5, seed: int = 0):
-        if n_init < 5:
-            raise ValueError(f"n_init must be at least 5, got {n_init}")
         self.n_init = n_init
         self.seed = seed
         self.model_: KMeans | None = None
